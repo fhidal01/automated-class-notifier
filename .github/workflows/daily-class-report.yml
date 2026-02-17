@@ -50,6 +50,18 @@ jobs:
             const repo = context.repo.repo;
             const workflowId = 'check-class.yml';
             const sinceMs = Date.now() - 24 * 60 * 60 * 1000;
+            const nyFormatter = new Intl.DateTimeFormat('en-US', {
+              timeZone: 'America/New_York',
+              year: 'numeric',
+              month: 'short',
+              day: '2-digit',
+              hour: 'numeric',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: true,
+              timeZoneName: 'short'
+            });
+            const formatNy = (value) => nyFormatter.format(new Date(value));
 
             let page = 1;
             let all = [];
@@ -88,11 +100,11 @@ jobs:
 
             const latest = recent.sort((a, b) => new Date(b.run_started_at) - new Date(a.run_started_at))[0];
             const latestText = latest
-              ? `${latest.conclusion || latest.status} at ${latest.run_started_at}`
+              ? `${latest.conclusion || latest.status} at ${formatNy(latest.run_started_at)}`
               : 'none';
 
             const report = [
-              `Daily check report for ${new Date().toISOString()}`,
+              `Daily check report for ${formatNy(Date.now())}`,
               `Total runs (last 24h): ${totals.total}`,
               `Success: ${totals.success}`,
               `Failure: ${totals.failure}`,
