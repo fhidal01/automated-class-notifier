@@ -1,0 +1,16 @@
+{
+  "name": "baby-class-finder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Checks class availability on melodymagicmusic.opus1.io and sends notifications.",
+  "scripts": {
+    "check": "node scripts/check-class.js",
+    "check:headed": "node scripts/check-class.js --headed"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2",
+    "playwright": "^1.50.1"
+  }
+}

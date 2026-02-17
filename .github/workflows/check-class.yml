@@ -1,0 +1,39 @@
+name: Check Class Availability
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Run checker
+        env:
+          MELODY_USERNAME: ${{ secrets.MELODY_USERNAME }}
+          MELODY_PASSWORD: ${{ secrets.MELODY_PASSWORD }}
+          CLASS_NAME: "Level 1 Tuesdays 10:00"
+          CLASS_DAY: "Tuesday"
+          INSTRUCTOR: "Katherine Knight"
+          LOCATION: "Melody Magic Music Studio"
+          ALERT_MODE: "available"
+          DRY_RUN: "false"
+          PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
+          PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
+          PUSHOVER_DEVICE: ${{ secrets.PUSHOVER_DEVICE }}
+          DEBUG: "false"
+        run: node scripts/check-class.js
