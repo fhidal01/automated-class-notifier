@@ -130,7 +130,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Send daily report via Pushover (optional)
-        if: steps.gate.outputs.should_run == 'true' && secrets.PUSHOVER_APP_TOKEN != '' && secrets.PUSHOVER_USER_KEY != ''
+        if: ${{ steps.gate.outputs.should_run == 'true' && env.PUSHOVER_APP_TOKEN != '' && env.PUSHOVER_USER_KEY != '' }}
         env:
           PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
           PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
