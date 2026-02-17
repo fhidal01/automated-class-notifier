@@ -130,12 +130,16 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Send daily report via Pushover (optional)
-        if: ${{ steps.gate.outputs.should_run == 'true' && env.PUSHOVER_APP_TOKEN != '' && env.PUSHOVER_USER_KEY != '' }}
+        if: steps.gate.outputs.should_run == 'true'
         env:
           PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
           PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
           PUSHOVER_DEVICE: ${{ secrets.PUSHOVER_DEVICE }}
         run: |
+          if [ -z "$PUSHOVER_APP_TOKEN" ] || [ -z "$PUSHOVER_USER_KEY" ]; then
+            echo "Skipping Pushover send: missing PUSHOVER_APP_TOKEN or PUSHOVER_USER_KEY."
+            exit 0
+          fi
           MSG="Daily class check report: total=${{ steps.build.outputs.total }}, success=${{ steps.build.outputs.success }}, failure=${{ steps.build.outputs.failure }}, latest=${{ steps.build.outputs.latest }}"
           if [ -n "$PUSHOVER_DEVICE" ]; then
             curl -sS \
