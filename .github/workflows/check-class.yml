@@ -43,7 +43,7 @@ jobs:
           CLASS_DAY: "Tuesday"
           INSTRUCTOR: "Katherine Knight"
           LOCATION: "Melody Magic Music Studio"
-          ALERT_MODE: "available"
+          ALERT_MODE: "always"
           DRY_RUN: "false"
           PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
           PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
