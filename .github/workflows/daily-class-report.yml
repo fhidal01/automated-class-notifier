@@ -1,0 +1,155 @@
+name: Daily Class Report
+
+on:
+  schedule:
+    # 10 PM America/New_York can be 02:00 or 03:00 UTC depending on DST
+    - cron: "0 2,3 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Gate to 10 PM New York time
+        id: gate
+        run: |
+          EVENT_NAME="${{ github.event_name }}"
+          ET_HOUR=$(TZ=America/New_York date +%H)
+          ET_DATE=$(TZ=America/New_York date +%Y-%m-%d)
+          ET_TIME=$(TZ=America/New_York date +%H:%M:%S)
+          echo "et_date=${ET_DATE}" >> "$GITHUB_OUTPUT"
+          echo "et_time=${ET_TIME}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$ET_HOUR" = "22" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip note when not 10 PM ET
+        if: steps.gate.outputs.should_run != 'true'
+        run: |
+          {
+            echo "## Daily Class Report"
+            echo ""
+            echo "Skipped: current New York time is \`${{ steps.gate.outputs.et_time }}\`."
+            echo "This workflow only runs the report at 10:00 PM America/New_York."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build report from last 24h checker runs
+        if: steps.gate.outputs.should_run == 'true'
+        id: build
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const workflowId = 'check-class.yml';
+            const sinceMs = Date.now() - 24 * 60 * 60 * 1000;
+
+            let page = 1;
+            let all = [];
+            while (true) {
+              const resp = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: workflowId,
+                per_page: 100,
+                page
+              });
+              const runs = resp.data.workflow_runs || [];
+              all = all.concat(runs);
+              if (runs.length < 100) break;
+              page += 1;
+            }
+
+            const recent = all.filter((r) => new Date(r.run_started_at).getTime() >= sinceMs);
+            const totals = {
+              total: recent.length,
+              success: 0,
+              failure: 0,
+              cancelled: 0,
+              skipped: 0,
+              timed_out: 0,
+              neutral: 0,
+              action_required: 0,
+              in_progress: 0
+            };
+
+            for (const run of recent) {
+              const key = run.conclusion || (run.status === 'completed' ? 'neutral' : 'in_progress');
+              if (Object.prototype.hasOwnProperty.call(totals, key)) totals[key] += 1;
+              else totals.neutral += 1;
+            }
+
+            const latest = recent.sort((a, b) => new Date(b.run_started_at) - new Date(a.run_started_at))[0];
+            const latestText = latest
+              ? `${latest.conclusion || latest.status} at ${latest.run_started_at}`
+              : 'none';
+
+            const report = [
+              `Daily check report for ${new Date().toISOString()}`,
+              `Total runs (last 24h): ${totals.total}`,
+              `Success: ${totals.success}`,
+              `Failure: ${totals.failure}`,
+              `Cancelled: ${totals.cancelled}`,
+              `Timed out: ${totals.timed_out}`,
+              `Skipped: ${totals.skipped}`,
+              `In progress: ${totals.in_progress}`,
+              `Latest run: ${latestText}`
+            ].join('\n');
+
+            core.setOutput('report', report);
+            core.setOutput('total', String(totals.total));
+            core.setOutput('success', String(totals.success));
+            core.setOutput('failure', String(totals.failure));
+            core.setOutput('latest', latestText);
+
+      - name: Write report summary
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          {
+            echo "## Daily Class Report"
+            echo ""
+            echo "- Date (ET): \`${{ steps.gate.outputs.et_date }}\`"
+            echo "- Time (ET): \`${{ steps.gate.outputs.et_time }}\`"
+            echo "- Total runs (24h): \`${{ steps.build.outputs.total }}\`"
+            echo "- Success: \`${{ steps.build.outputs.success }}\`"
+            echo "- Failure: \`${{ steps.build.outputs.failure }}\`"
+            echo "- Latest run: \`${{ steps.build.outputs.latest }}\`"
+            echo ""
+            echo "### Raw"
+            echo ""
+            echo '```'
+            echo "${{ steps.build.outputs.report }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Send daily report via Pushover (optional)
+        if: steps.gate.outputs.should_run == 'true' && secrets.PUSHOVER_APP_TOKEN != '' && secrets.PUSHOVER_USER_KEY != ''
+        env:
+          PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
+          PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
+          PUSHOVER_DEVICE: ${{ secrets.PUSHOVER_DEVICE }}
+        run: |
+          MSG="Daily class check report: total=${{ steps.build.outputs.total }}, success=${{ steps.build.outputs.success }}, failure=${{ steps.build.outputs.failure }}, latest=${{ steps.build.outputs.latest }}"
+          if [ -n "$PUSHOVER_DEVICE" ]; then
+            curl -sS \
+              --form-string "token=$PUSHOVER_APP_TOKEN" \
+              --form-string "user=$PUSHOVER_USER_KEY" \
+              --form-string "device=$PUSHOVER_DEVICE" \
+              --form-string "title=Daily Class Report" \
+              --form-string "message=$MSG" \
+              https://api.pushover.net/1/messages.json >/dev/null
+          else
+            curl -sS \
+              --form-string "token=$PUSHOVER_APP_TOKEN" \
+              --form-string "user=$PUSHOVER_USER_KEY" \
+              --form-string "title=Daily Class Report" \
+              --form-string "message=$MSG" \
+              https://api.pushover.net/1/messages.json >/dev/null
+          fi
