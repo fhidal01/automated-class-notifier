@@ -20,7 +20,7 @@ const CONFIG = {
   instructor: process.env.INSTRUCTOR || "",
   location: process.env.LOCATION || "",
   stateFile: process.env.STATE_FILE || "./state.json",
-  alertMode: process.env.ALERT_MODE || "available",
+  alertMode: process.env.ALERT_MODE || "always",
   dryRun: (process.env.DRY_RUN || "false").toLowerCase() === "true",
   pushover: {
     token: process.env.PUSHOVER_APP_TOKEN || "",
