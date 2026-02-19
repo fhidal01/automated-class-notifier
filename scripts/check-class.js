@@ -22,10 +22,14 @@ const CONFIG = {
   stateFile: process.env.STATE_FILE || "./state.json",
   alertMode: process.env.ALERT_MODE || "always",
   dryRun: (process.env.DRY_RUN || "false").toLowerCase() === "true",
-  pushover: {
-    token: process.env.PUSHOVER_APP_TOKEN || "",
-    user: process.env.PUSHOVER_USER_KEY || "",
-    device: process.env.PUSHOVER_DEVICE || ""
+  twilio: {
+    accountSid: process.env.TWILIO_ACCOUNT_SID || "",
+    authToken: process.env.TWILIO_AUTH_TOKEN || "",
+    fromNumber: process.env.TWILIO_FROM_NUMBER || "",
+    toNumbers: (process.env.TWILIO_TO_NUMBER || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
   },
   debug: (process.env.DEBUG || "false").toLowerCase() === "true"
 };
@@ -34,8 +38,17 @@ if (!CONFIG.username || !CONFIG.password) {
   console.error("Missing MELODY_USERNAME or MELODY_PASSWORD in env.");
   process.exit(2);
 }
-if (!CONFIG.pushover.token || !CONFIG.pushover.user) {
-  console.error("Missing PUSHOVER_APP_TOKEN or PUSHOVER_USER_KEY in env.");
+if (
+  CONFIG.alertMode !== "never" &&
+  !CONFIG.dryRun &&
+  (
+    !CONFIG.twilio.accountSid ||
+    !CONFIG.twilio.authToken ||
+    !CONFIG.twilio.fromNumber ||
+    CONFIG.twilio.toNumbers.length === 0
+  )
+) {
+  console.error("Missing TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, or TWILIO_TO_NUMBER in env.");
   process.exit(2);
 }
 
@@ -62,26 +75,34 @@ function normalizeStatus(text) {
   return value;
 }
 
-async function sendPushover(message, title = "Class Availability") {
+async function sendTwilioSms(message, title = "Class Availability") {
   if (CONFIG.dryRun) {
-    console.log(`[DRY_RUN] Would send Pushover: ${title} - ${message}`);
+    console.log(`[DRY_RUN] Would send Twilio SMS: ${title} - ${message}`);
     return;
   }
-  const payload = new URLSearchParams();
-  payload.set("token", CONFIG.pushover.token);
-  payload.set("user", CONFIG.pushover.user);
-  payload.set("message", message);
-  payload.set("title", title);
-  if (CONFIG.pushover.device) payload.set("device", CONFIG.pushover.device);
 
-  const response = await fetch("https://api.pushover.net/1/messages.json", {
-    method: "POST",
-    body: payload
-  });
+  const textMessage = `[${title}] ${message}`;
+  for (const to of CONFIG.twilio.toNumbers) {
+    const payload = new URLSearchParams();
+    payload.set("From", CONFIG.twilio.fromNumber);
+    payload.set("To", to);
+    payload.set("Body", textMessage);
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Pushover error: ${response.status} ${text}`);
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${CONFIG.twilio.accountSid}/Messages.json`,
+      {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${CONFIG.twilio.accountSid}:${CONFIG.twilio.authToken}`).toString("base64")}`
+      },
+      body: payload
+    }
+    );
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Twilio error (${to}): ${response.status} ${text}`);
+    }
   }
 }
 
@@ -224,7 +245,7 @@ async function main() {
 
     if (shouldAlert) {
       const message = `${result.summary} is ${result.rawStatus || result.status}.`;
-      await sendPushover(message, "Class Availability");
+      await sendTwilioSms(message, "Class Availability");
       console.log("Notification sent.");
     } else {
       console.log("No notification sent.");

@@ -141,31 +141,27 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Send daily report via Pushover (optional)
+      - name: Send daily report via Twilio SMS (optional)
         if: steps.gate.outputs.should_run == 'true'
         env:
-          PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
-          PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
-          PUSHOVER_DEVICE: ${{ secrets.PUSHOVER_DEVICE }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_FROM_NUMBER: ${{ secrets.TWILIO_FROM_NUMBER }}
+          TWILIO_TO_NUMBER: ${{ secrets.TWILIO_TO_NUMBER }}
         run: |
-          if [ -z "$PUSHOVER_APP_TOKEN" ] || [ -z "$PUSHOVER_USER_KEY" ]; then
-            echo "Skipping Pushover send: missing PUSHOVER_APP_TOKEN or PUSHOVER_USER_KEY."
+          if [ -z "$TWILIO_ACCOUNT_SID" ] || [ -z "$TWILIO_AUTH_TOKEN" ] || [ -z "$TWILIO_FROM_NUMBER" ] || [ -z "$TWILIO_TO_NUMBER" ]; then
+            echo "Skipping Twilio send: missing TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, or TWILIO_TO_NUMBER."
             exit 0
           fi
           MSG="Daily class check report: total=${{ steps.build.outputs.total }}, success=${{ steps.build.outputs.success }}, failure=${{ steps.build.outputs.failure }}, latest=${{ steps.build.outputs.latest }}"
-          if [ -n "$PUSHOVER_DEVICE" ]; then
-            curl -sS \
-              --form-string "token=$PUSHOVER_APP_TOKEN" \
-              --form-string "user=$PUSHOVER_USER_KEY" \
-              --form-string "device=$PUSHOVER_DEVICE" \
-              --form-string "title=Daily Class Report" \
-              --form-string "message=$MSG" \
-              https://api.pushover.net/1/messages.json >/dev/null
-          else
-            curl -sS \
-              --form-string "token=$PUSHOVER_APP_TOKEN" \
-              --form-string "user=$PUSHOVER_USER_KEY" \
-              --form-string "title=Daily Class Report" \
-              --form-string "message=$MSG" \
-              https://api.pushover.net/1/messages.json >/dev/null
-          fi
+          for TO in ${TWILIO_TO_NUMBER//,/ }; do
+            TO_TRIMMED="$(echo "$TO" | xargs)"
+            if [ -z "$TO_TRIMMED" ]; then
+              continue
+            fi
+            curl -sS -X POST "https://api.twilio.com/2010-04-01/Accounts/$TWILIO_ACCOUNT_SID/Messages.json" \
+              --data-urlencode "From=$TWILIO_FROM_NUMBER" \
+              --data-urlencode "To=$TO_TRIMMED" \
+              --data-urlencode "Body=[Daily Class Report] $MSG" \
+              -u "$TWILIO_ACCOUNT_SID:$TWILIO_AUTH_TOKEN" >/dev/null
+          done

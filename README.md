@@ -1,6 +1,6 @@
 # Baby Class Finder (VPS)
 
-This script logs into `melodymagicmusic.opus1.io`, checks the Tuesday class, and sends a Pushover alert when availability is detected.
+This script logs into `melodymagicmusic.opus1.io`, checks the Tuesday class, and sends a Twilio SMS alert when availability is detected.
 
 ## What it checks
 - Class: `Level 1 Tuesdays 10:00`
@@ -15,10 +15,12 @@ cp .env.example .env
 npm run check
 ```
 
-## Pushover
-Create an app in Pushover and set:
-- `PUSHOVER_APP_TOKEN`
-- `PUSHOVER_USER_KEY`
+## Twilio SMS
+Create a Twilio account and configure:
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_FROM_NUMBER` (Twilio number in E.164 format, e.g. `+15551234567`)
+- `TWILIO_TO_NUMBER` (one or many recipient numbers in E.164 format, comma-separated)
 
 ## Alert behavior
 Set `ALERT_MODE` in `.env`:
