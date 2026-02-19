@@ -43,7 +43,7 @@ jobs:
           CLASS_DAY: "Tuesday"
           INSTRUCTOR: "Katherine Knight"
           LOCATION: "Melody Magic Music Studio"
-          ALERT_MODE: "available"
+          ALERT_MODE: "always"
           DRY_RUN: "false"
           TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
           TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
