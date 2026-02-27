@@ -95,48 +95,48 @@ jobs:
           esac
 
           BODY="Class status: $CLASS_STATUS
-Repository: $GITHUB_REPOSITORY
-Workflow: $GITHUB_WORKFLOW
-Run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          Repository: $GITHUB_REPOSITORY
+          Workflow: $GITHUB_WORKFLOW
+          Run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           export SUBJECT BODY
 
           python3 - <<'PY'
-import os
-import smtplib
-from email.message import EmailMessage
+          import os
+          import smtplib
+          from email.message import EmailMessage
 
-host = os.environ["SMTP_HOST"]
-port = int(os.environ["SMTP_PORT"])
-username = os.getenv("SMTP_USERNAME", "")
-password = os.getenv("SMTP_PASSWORD", "")
-secure = (os.getenv("SMTP_SECURE") or "starttls").lower()
-from_addr = os.environ["SMTP_FROM"]
-to_addrs = [x.strip() for x in os.environ["SMTP_TO"].split(",") if x.strip()]
-subject = os.environ["SUBJECT"]
-body = os.environ["BODY"]
+          host = os.environ["SMTP_HOST"]
+          port = int(os.environ["SMTP_PORT"])
+          username = os.getenv("SMTP_USERNAME", "")
+          password = os.getenv("SMTP_PASSWORD", "")
+          secure = (os.getenv("SMTP_SECURE") or "starttls").lower()
+          from_addr = os.environ["SMTP_FROM"]
+          to_addrs = [x.strip() for x in os.environ["SMTP_TO"].split(",") if x.strip()]
+          subject = os.environ["SUBJECT"]
+          body = os.environ["BODY"]
 
-msg = EmailMessage()
-msg["Subject"] = subject
-msg["From"] = from_addr
-msg["To"] = ", ".join(to_addrs)
-msg.set_content(body)
+          msg = EmailMessage()
+          msg["Subject"] = subject
+          msg["From"] = from_addr
+          msg["To"] = ", ".join(to_addrs)
+          msg.set_content(body)
 
-if secure == "ssl":
-  server = smtplib.SMTP_SSL(host, port, timeout=30)
-else:
-  server = smtplib.SMTP(host, port, timeout=30)
-  server.ehlo()
-  if secure == "starttls":
-    server.starttls()
-    server.ehlo()
+          if secure == "ssl":
+            server = smtplib.SMTP_SSL(host, port, timeout=30)
+          else:
+            server = smtplib.SMTP(host, port, timeout=30)
+            server.ehlo()
+            if secure == "starttls":
+              server.starttls()
+              server.ehlo()
 
-try:
-  if username:
-    server.login(username, password)
-  server.send_message(msg)
-finally:
-  server.quit()
-PY
+          try:
+            if username:
+              server.login(username, password)
+            server.send_message(msg)
+          finally:
+            server.quit()
+          PY
 
       - name: Log notification channels
         if: always()
