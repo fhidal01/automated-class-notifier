@@ -20,6 +20,21 @@ Create an app in Pushover and set:
 - `PUSHOVER_APP_TOKEN`
 - `PUSHOVER_USER_KEY`
 
+## Email Notifications (GitHub Actions)
+Optional SMTP secrets for both check alerts and daily report emails:
+- `SMTP_HOST`
+- `SMTP_PORT` (for example `587`)
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_SECURE` (`starttls`, `ssl`, or `none`; default is `starttls`)
+- `SMTP_FROM`
+- `SMTP_TO` (one or many addresses, comma-separated)
+
+Email subject is dynamic from detected class status:
+- `Music class - Available`
+- `Music class - Full`
+- `Music class - Unknown`
+
 ## Alert behavior
 Set `ALERT_MODE` in `.env`:
 - `available` (default): alert only when available

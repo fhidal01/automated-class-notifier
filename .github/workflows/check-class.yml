@@ -36,6 +36,7 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Run checker
+        id: checker
         env:
           MELODY_USERNAME: ${{ secrets.MELODY_USERNAME }}
           MELODY_PASSWORD: ${{ secrets.MELODY_PASSWORD }}
@@ -49,4 +50,89 @@ jobs:
           PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
           PUSHOVER_DEVICE: ${{ secrets.PUSHOVER_DEVICE }}
           DEBUG: "false"
-        run: node scripts/check-class.js
+        run: |
+          LOG_FILE="$(mktemp)"
+          set +e
+          node scripts/check-class.js 2>&1 | tee "$LOG_FILE"
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          CLASS_STATUS="$(sed -nE 's/^.*Status: ([^ ]+).*/\1/p' "$LOG_FILE" | tail -1 | tr '[:upper:]' '[:lower:]')"
+          if [ -z "$CLASS_STATUS" ]; then
+            CLASS_STATUS="unknown"
+          fi
+
+          ALERT_SENT="false"
+          if grep -q "Notification sent." "$LOG_FILE"; then
+            ALERT_SENT="true"
+          fi
+
+          echo "class_status=$CLASS_STATUS" >> "$GITHUB_OUTPUT"
+          echo "alert_sent=$ALERT_SENT" >> "$GITHUB_OUTPUT"
+          exit "$EXIT_CODE"
+
+      - name: Send alert email (optional)
+        if: steps.checker.outputs.alert_sent == 'true'
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          SMTP_TO: ${{ secrets.SMTP_TO }}
+          CLASS_STATUS: ${{ steps.checker.outputs.class_status }}
+        run: |
+          if [ -z "$SMTP_HOST" ] || [ -z "$SMTP_PORT" ] || [ -z "$SMTP_FROM" ] || [ -z "$SMTP_TO" ]; then
+            echo "Skipping email send: missing SMTP_HOST, SMTP_PORT, SMTP_FROM, or SMTP_TO."
+            exit 0
+          fi
+
+          case "$CLASS_STATUS" in
+            available) SUBJECT="Music class - Available" ;;
+            full) SUBJECT="Music class - Full" ;;
+            *) SUBJECT="Music class - Unknown" ;;
+          esac
+
+          BODY="Class status: $CLASS_STATUS
+Repository: $GITHUB_REPOSITORY
+Workflow: $GITHUB_WORKFLOW
+Run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          export SUBJECT BODY
+
+          python3 - <<'PY'
+import os
+import smtplib
+from email.message import EmailMessage
+
+host = os.environ["SMTP_HOST"]
+port = int(os.environ["SMTP_PORT"])
+username = os.getenv("SMTP_USERNAME", "")
+password = os.getenv("SMTP_PASSWORD", "")
+secure = (os.getenv("SMTP_SECURE") or "starttls").lower()
+from_addr = os.environ["SMTP_FROM"]
+to_addrs = [x.strip() for x in os.environ["SMTP_TO"].split(",") if x.strip()]
+subject = os.environ["SUBJECT"]
+body = os.environ["BODY"]
+
+msg = EmailMessage()
+msg["Subject"] = subject
+msg["From"] = from_addr
+msg["To"] = ", ".join(to_addrs)
+msg.set_content(body)
+
+if secure == "ssl":
+  server = smtplib.SMTP_SSL(host, port, timeout=30)
+else:
+  server = smtplib.SMTP(host, port, timeout=30)
+  server.ehlo()
+  if secure == "starttls":
+    server.starttls()
+    server.ehlo()
+
+try:
+  if username:
+    server.login(username, password)
+  server.send_message(msg)
+finally:
+  server.quit()
+PY

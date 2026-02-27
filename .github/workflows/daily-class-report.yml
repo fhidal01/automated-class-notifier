@@ -142,6 +142,7 @@ jobs:
           FULL_COUNT=0
           AVAILABLE_COUNT=0
           UNKNOWN_COUNT=0
+          LATEST_STATUS="unknown"
 
           while IFS= read -r RUN_B64; do
             if [ -z "$RUN_B64" ]; then
@@ -159,6 +160,7 @@ jobs:
             if [ -z "$CLASS_STATUS" ]; then
               CLASS_STATUS="unknown"
             fi
+            LATEST_STATUS="$CLASS_STATUS"
 
             case "$CLASS_STATUS" in
               full) FULL_COUNT=$((FULL_COUNT + 1)) ;;
@@ -181,6 +183,7 @@ jobs:
             echo "full_count=$FULL_COUNT"
             echo "available_count=$AVAILABLE_COUNT"
             echo "unknown_count=$UNKNOWN_COUNT"
+            echo "latest_status=$LATEST_STATUS"
           } >> "$GITHUB_OUTPUT"
 
       - name: Write report summary
@@ -211,6 +214,86 @@ jobs:
             echo "${{ steps.build.outputs.report }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Send daily report email (optional)
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          SMTP_TO: ${{ secrets.SMTP_TO }}
+          TOTAL_RUNS: ${{ steps.build.outputs.total }}
+          SUCCESS_RUNS: ${{ steps.build.outputs.success }}
+          FAILURE_RUNS: ${{ steps.build.outputs.failure }}
+          FULL_COUNT: ${{ steps.history.outputs.full_count }}
+          AVAILABLE_COUNT: ${{ steps.history.outputs.available_count }}
+          UNKNOWN_COUNT: ${{ steps.history.outputs.unknown_count }}
+          LATEST_STATUS: ${{ steps.history.outputs.latest_status }}
+          LATEST_RUN: ${{ steps.build.outputs.latest }}
+        run: |
+          if [ -z "$SMTP_HOST" ] || [ -z "$SMTP_PORT" ] || [ -z "$SMTP_FROM" ] || [ -z "$SMTP_TO" ]; then
+            echo "Skipping email send: missing SMTP_HOST, SMTP_PORT, SMTP_FROM, or SMTP_TO."
+            exit 0
+          fi
+
+          case "$LATEST_STATUS" in
+            available) SUBJECT="Music class - Available" ;;
+            full) SUBJECT="Music class - Full" ;;
+            *) SUBJECT="Music class - Unknown" ;;
+          esac
+
+          BODY="Daily class report (last 24h):
+Total runs: $TOTAL_RUNS
+Success: $SUCCESS_RUNS
+Failure: $FAILURE_RUNS
+Class status full: $FULL_COUNT
+Class status available: $AVAILABLE_COUNT
+Class status unknown: $UNKNOWN_COUNT
+Latest run: $LATEST_RUN
+
+Workflow run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          export SUBJECT BODY
+
+          python3 - <<'PY'
+import os
+import smtplib
+from email.message import EmailMessage
+
+host = os.environ["SMTP_HOST"]
+port = int(os.environ["SMTP_PORT"])
+username = os.getenv("SMTP_USERNAME", "")
+password = os.getenv("SMTP_PASSWORD", "")
+secure = (os.getenv("SMTP_SECURE") or "starttls").lower()
+from_addr = os.environ["SMTP_FROM"]
+to_addrs = [x.strip() for x in os.environ["SMTP_TO"].split(",") if x.strip()]
+subject = os.environ["SUBJECT"]
+body = os.environ["BODY"]
+
+msg = EmailMessage()
+msg["Subject"] = subject
+msg["From"] = from_addr
+msg["To"] = ", ".join(to_addrs)
+msg.set_content(body)
+
+if secure == "ssl":
+  server = smtplib.SMTP_SSL(host, port, timeout=30)
+else:
+  server = smtplib.SMTP(host, port, timeout=30)
+  server.ehlo()
+  if secure == "starttls":
+    server.starttls()
+    server.ehlo()
+
+try:
+  if username:
+    server.login(username, password)
+  server.send_message(msg)
+finally:
+  server.quit()
+PY
 
       - name: Send daily report via Pushover (optional)
         if: steps.gate.outputs.should_run == 'true'
