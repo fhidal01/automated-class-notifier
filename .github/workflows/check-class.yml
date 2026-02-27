@@ -62,7 +62,7 @@ jobs:
           fi
 
           ALERT_SENT="false"
-          if grep -q "Notification sent." "$LOG_FILE"; then
+          if grep -q "Notification channels sent: push" "$LOG_FILE"; then
             ALERT_SENT="true"
           fi
 
@@ -71,6 +71,7 @@ jobs:
           exit "$EXIT_CODE"
 
       - name: Send alert email (optional)
+        id: email_alert
         if: steps.checker.outputs.alert_sent == 'true'
         env:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -136,3 +137,21 @@ try:
 finally:
   server.quit()
 PY
+
+      - name: Log notification channels
+        if: always()
+        run: |
+          if [ "${{ steps.checker.outputs.alert_sent }}" != "true" ]; then
+            CHANNELS="none"
+          elif [ "${{ steps.email_alert.outcome }}" = "success" ]; then
+            CHANNELS="push,email"
+          elif [ "${{ steps.email_alert.outcome }}" = "skipped" ]; then
+            CHANNELS="push"
+          else
+            CHANNELS="push (email failed)"
+          fi
+          echo "Notification channels sent: $CHANNELS"
+          {
+            echo ""
+            echo "- notification_channels: \`$CHANNELS\`"
+          } >> "$GITHUB_STEP_SUMMARY"

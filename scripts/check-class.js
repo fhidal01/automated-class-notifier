@@ -230,9 +230,9 @@ async function main() {
     if (shouldAlert) {
       const message = `${result.summary} is ${result.rawStatus || result.status}.`;
       await sendPushover(message, "Class Availability");
-      console.log("Notification sent.");
+      console.log("Notification channels sent: push");
     } else {
-      console.log("No notification sent.");
+      console.log("Notification channels sent: none");
     }
 
     writeState({ lastStatus: result.status, lastCheckedAt: new Date().toISOString() });
