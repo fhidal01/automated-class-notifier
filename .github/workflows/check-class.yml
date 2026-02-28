@@ -133,7 +133,10 @@ jobs:
           try:
             if username:
               server.login(username, password)
-            server.send_message(msg)
+            refused = server.send_message(msg)
+            if refused:
+              raise RuntimeError(f"SMTP refused recipients: {refused}")
+            print(f"Email send completed. recipients={len(to_addrs)} subject={subject}")
           finally:
             server.quit()
           PY
