@@ -2,8 +2,9 @@ name: Daily Class Report
 
 on:
   schedule:
-    # 10 PM America/New_York can be 02:00 or 03:00 UTC depending on DST
-    - cron: "0 2,3 * * *"
+    # Try every 15 minutes around 10 PM America/New_York and let the gate
+    # pick the first eligible run for the ET day.
+    - cron: "0,15,30,45 2,3,4 * * *"
   workflow_dispatch:
 
 permissions:
@@ -15,29 +16,107 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Gate to 10 PM New York time
+      - name: Gate scheduled run near 10 PM New York time
         id: gate
-        run: |
-          EVENT_NAME="${{ github.event_name }}"
-          ET_HOUR=$(TZ=America/New_York date +%H)
-          ET_DATE=$(TZ=America/New_York date +%Y-%m-%d)
-          ET_TIME=$(TZ=America/New_York date +%H:%M:%S)
-          echo "et_date=${ET_DATE}" >> "$GITHUB_OUTPUT"
-          echo "et_time=${ET_TIME}" >> "$GITHUB_OUTPUT"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$ET_HOUR" = "22" ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-          fi
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const eventName = context.eventName;
+            const now = new Date();
+            const formatParts = (value) =>
+              Object.fromEntries(
+                new Intl.DateTimeFormat('en-US', {
+                  timeZone: 'America/New_York',
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                  hour12: false
+                })
+                  .formatToParts(new Date(value))
+                  .filter((part) => part.type !== 'literal')
+                  .map((part) => [part.type, part.value])
+              );
 
-      - name: Skip note when not 10 PM ET
+            const currentEt = formatParts(now);
+            const etDate = `${currentEt.year}-${currentEt.month}-${currentEt.day}`;
+            const etTime = `${currentEt.hour}:${currentEt.minute}:${currentEt.second}`;
+            const etHour = Number(currentEt.hour);
+
+            core.setOutput('et_date', etDate);
+            core.setOutput('et_time', etTime);
+
+            if (eventName === 'workflow_dispatch') {
+              core.setOutput('should_run', 'true');
+              core.setOutput('reason', 'manual dispatch');
+              return;
+            }
+
+            if (etHour < 22) {
+              core.setOutput('should_run', 'false');
+              core.setOutput('reason', 'waiting for the 10 PM ET window');
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const workflowId = 'daily-class-report.yml';
+            let page = 1;
+            let alreadyRanToday = false;
+
+            while (!alreadyRanToday) {
+              const resp = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: workflowId,
+                event: 'schedule',
+                per_page: 100,
+                page
+              });
+
+              const runs = resp.data.workflow_runs || [];
+              if (!runs.length) break;
+
+              for (const run of runs) {
+                if (run.id === context.runId) continue;
+
+                const startedAt = run.run_started_at || run.created_at;
+                if (!startedAt) continue;
+
+                const runEt = formatParts(startedAt);
+                const runEtDate = `${runEt.year}-${runEt.month}-${runEt.day}`;
+                if (runEtDate !== etDate) continue;
+
+                if (new Date(startedAt) >= now) continue;
+
+                alreadyRanToday = true;
+                break;
+              }
+
+              if (runs.length < 100) break;
+              page += 1;
+            }
+
+            if (alreadyRanToday) {
+              core.setOutput('should_run', 'false');
+              core.setOutput('reason', 'the scheduled report already ran for this ET date');
+              return;
+            }
+
+            core.setOutput('should_run', 'true');
+            core.setOutput('reason', 'first eligible scheduled run in the 10 PM ET window');
+
+      - name: Skip note when gate says not to run
         if: steps.gate.outputs.should_run != 'true'
         run: |
           {
             echo "## Daily Class Report"
             echo ""
             echo "Skipped: current New York time is \`${{ steps.gate.outputs.et_time }}\`."
-            echo "This workflow only runs the report at 10:00 PM America/New_York."
+            echo "Reason: ${{ steps.gate.outputs.reason }}."
+            echo "This workflow now retries every 15 minutes around 10:00 PM America/New_York and runs once on the first eligible attempt."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build report from last 24h checker runs
